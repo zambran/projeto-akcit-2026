@@ -45,7 +45,9 @@ def get_db_path() -> str:
 
 def get_connection(db_path: str | None = None) -> sqlite3.Connection:
     path = db_path or get_db_path()
-    os.makedirs(os.path.dirname(path), exist_ok=True)
+    parent = os.path.dirname(path)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
     conn = sqlite3.connect(path)
     conn.execute("PRAGMA foreign_keys = ON")
     conn.row_factory = sqlite3.Row
