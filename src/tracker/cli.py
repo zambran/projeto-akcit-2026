@@ -42,6 +42,9 @@ def stop():
             click.echo(f"Stopped: {stopped}")
         else:
             click.echo("No active task to stop.")
+    except Exception as e:
+        click.echo(f"Error: {e}", err=True)
+        raise SystemExit(1)
     finally:
         conn.close()
 
@@ -83,6 +86,9 @@ def list_tasks():
     try:
         tasks = service.list_tasks(conn)
         click.echo(format_task_list(tasks))
+    except Exception as e:
+        click.echo(f"Error: {e}", err=True)
+        raise SystemExit(1)
     finally:
         conn.close()
 
@@ -97,6 +103,9 @@ def report(date_from: str | None, date_to: str | None, tag: str | None):
     try:
         summaries = service.get_filtered_report(conn, date_from, date_to, tag)
         click.echo(format_report(summaries))
+    except Exception as e:
+        click.echo(f"Error: {e}", err=True)
+        raise SystemExit(1)
     finally:
         conn.close()
 

@@ -37,8 +37,51 @@ def get_task_by_id(conn: sqlite3.Connection, task_id: int) -> Task | None:
 
 
 def get_all_tasks(conn: sqlite3.Connection) -> list[Task]:
-    rows = conn.execute("SELECT * FROM tasks ORDER BY created_at DESC").fetchall()
-    return [_row_to_task(conn, r) for r in rows]
+    """Get all tasks with tags and entries in batch (no N+1)."""
+    task_rows = conn.execute("SELECT * FROM tasks ORDER BY created_at DESC").fetchall()
+    if not task_rows:
+        return []
+
+    task_ids = [r["id"] for r in task_rows]
+    placeholders = ",".join("?" * len(task_ids))
+
+    # Batch-load all tags
+    tag_rows = conn.execute(
+        f"SELECT tt.task_id, t.id, t.name FROM tags t "
+        f"JOIN task_tags tt ON t.id = tt.tag_id "
+        f"WHERE tt.task_id IN ({placeholders})",
+        task_ids,
+    ).fetchall()
+    tags_by_task: dict[int, list[Tag]] = {}
+    for r in tag_rows:
+        tags_by_task.setdefault(r["task_id"], []).append(Tag(id=r["id"], name=r["name"]))
+
+    # Batch-load all time entries
+    entry_rows = conn.execute(
+        f"SELECT * FROM time_entries WHERE task_id IN ({placeholders}) ORDER BY start_time",
+        task_ids,
+    ).fetchall()
+    entries_by_task: dict[int, list[TimeEntry]] = {}
+    for r in entry_rows:
+        entries_by_task.setdefault(r["task_id"], []).append(
+            TimeEntry(
+                id=r["id"],
+                task_id=r["task_id"],
+                start_time=_parse_dt(r["start_time"]),
+                end_time=_parse_dt(r["end_time"]),
+            )
+        )
+
+    return [
+        Task(
+            id=r["id"],
+            name=r["name"],
+            created_at=_parse_dt(r["created_at"]),
+            tags=tags_by_task.get(r["id"], []),
+            entries=entries_by_task.get(r["id"], []),
+        )
+        for r in task_rows
+    ]
 
 
 def _row_to_task(conn: sqlite3.Connection, row: sqlite3.Row) -> Task:
@@ -135,13 +178,10 @@ def get_entries_for_task(conn: sqlite3.Connection, task_id: int) -> list[TimeEnt
 
 # --- Reports ---
 
-def get_report_data(
-    conn: sqlite3.Connection,
-    date_from: str | None = None,
-    date_to: str | None = None,
-    tag: str | None = None,
-) -> list[TaskSummary]:
-    """Get aggregated report data with optional filters."""
+def _build_report_query(
+    date_from: str | None, date_to: str | None, tag: str | None
+) -> tuple[str, list]:
+    """Build the aggregation query with optional filters."""
     query = """
         SELECT
             t.id as task_id,
@@ -175,23 +215,50 @@ def get_report_data(
         query += " WHERE " + " AND ".join(conditions)
 
     query += " GROUP BY t.id, t.name ORDER BY total_seconds DESC"
+    return query, params
 
+
+def _batch_load_tags(conn: sqlite3.Connection, task_ids: list[int]) -> dict[int, list[str]]:
+    """Load tags for multiple tasks in a single query."""
+    if not task_ids:
+        return {}
+    placeholders = ",".join("?" * len(task_ids))
+    rows = conn.execute(
+        f"SELECT tt.task_id, tg.name FROM tags tg "
+        f"JOIN task_tags tt ON tg.id = tt.tag_id "
+        f"WHERE tt.task_id IN ({placeholders})",
+        task_ids,
+    ).fetchall()
+    tags_by_task: dict[int, list[str]] = {}
+    for r in rows:
+        tags_by_task.setdefault(r["task_id"], []).append(r["name"])
+    return tags_by_task
+
+
+def get_report_data(
+    conn: sqlite3.Connection,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    tag: str | None = None,
+) -> list[TaskSummary]:
+    """Get aggregated report data with optional filters."""
+    query, params = _build_report_query(date_from, date_to, tag)
     rows = conn.execute(query, params).fetchall()
 
-    grand_total = sum(r["total_seconds"] for r in rows) if rows else 0
+    if not rows:
+        return []
 
-    summaries = []
-    for r in rows:
-        tags = get_tags_for_task(conn, r["task_id"])
-        pct = (r["total_seconds"] / grand_total * 100) if grand_total > 0 else 0
-        summaries.append(
-            TaskSummary(
-                task_id=r["task_id"],
-                task_name=r["task_name"],
-                tags=[tg.name for tg in tags],
-                total_seconds=r["total_seconds"],
-                percentage=pct,
-            )
+    task_ids = [r["task_id"] for r in rows]
+    tags_by_task = _batch_load_tags(conn, task_ids)
+    grand_total = sum(r["total_seconds"] for r in rows)
+
+    return [
+        TaskSummary(
+            task_id=r["task_id"],
+            task_name=r["task_name"],
+            tags=tags_by_task.get(r["task_id"], []),
+            total_seconds=r["total_seconds"],
+            percentage=(r["total_seconds"] / grand_total * 100) if grand_total > 0 else 0,
         )
-
-    return summaries
+        for r in rows
+    ]

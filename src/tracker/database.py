@@ -9,7 +9,7 @@ DEFAULT_DB_PATH = os.path.join(Path.home(), ".tracker", "tracker.db")
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS tasks (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
+    name TEXT NOT NULL UNIQUE,
     created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
 );
 
