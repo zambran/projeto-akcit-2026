@@ -1,0 +1,267 @@
+{
+  "feature": "initial-features",
+  "local_config": {
+    "mysql": null,
+    "kvs": null,
+    "bigqueue": null
+  },
+  "execution_strategy": {
+    "type": "batched",
+    "phases": [
+      {
+        "name": "Foundation",
+        "tasks": ["TASK-001", "TASK-002", "TASK-003"]
+      },
+      {
+        "name": "Core Logic",
+        "tasks": ["TASK-004", "TASK-005"]
+      },
+      {
+        "name": "User Interface",
+        "tasks": ["TASK-006", "TASK-007"]
+      },
+      {
+        "name": "Tests",
+        "tasks": ["TASK-008", "TASK-009"]
+      },
+      {
+        "name": "Quality",
+        "tasks": ["TASK-010", "TASK-011", "TASK-012"]
+      }
+    ]
+  },
+  "stats": {
+    "total": 12,
+    "done": 0,
+    "by_layer": {
+      "1": 9,
+      "2": 0,
+      "3": 3
+    }
+  },
+  "tasks": [
+    {
+      "id": "TASK-001",
+      "title": "Project setup and packaging",
+      "description": "Create pyproject.toml with Click and tabulate dependencies, src/tracker/ package structure, and pytest configuration. Define 'tracker' CLI entry point.",
+      "status": "pending",
+      "layer": 1,
+      "complexity": "Low",
+      "depends_on": [],
+      "files": ["pyproject.toml", "src/tracker/__init__.py"],
+      "acceptance_criteria": [
+        "AC-1: pyproject.toml defines project with click, tabulate, pytest dependencies",
+        "AC-2: 'tracker' entry point is defined and installable via pip install -e .",
+        "GATE: pip install -e . succeeds and 'tracker --help' shows usage"
+      ],
+      "references": []
+    },
+    {
+      "id": "TASK-002",
+      "title": "Database module with schema initialization",
+      "description": "Create database.py with SQLite connection management and auto-schema creation (tasks, tags, task_tags, time_entries tables). DB path defaults to ~/.tracker/tracker.db, configurable via TRACKER_DB_PATH.",
+      "status": "pending",
+      "layer": 1,
+      "complexity": "Low",
+      "depends_on": ["TASK-001"],
+      "files": ["src/tracker/database.py"],
+      "acceptance_criteria": [
+        "AC-1: Creates ~/.tracker/ directory and tracker.db on first run",
+        "AC-2: All 4 tables created with correct schema and foreign keys",
+        "AC-3: TRACKER_DB_PATH env var overrides default location",
+        "GATE: python -c 'from tracker.database import get_connection' runs without error"
+      ],
+      "references": []
+    },
+    {
+      "id": "TASK-003",
+      "title": "Data models",
+      "description": "Create models.py with Python dataclasses for Task, Tag, TimeEntry. Include helper methods for time duration calculation.",
+      "status": "pending",
+      "layer": 1,
+      "complexity": "Low",
+      "depends_on": ["TASK-001"],
+      "files": ["src/tracker/models.py"],
+      "acceptance_criteria": [
+        "AC-1: Task, Tag, TimeEntry dataclasses defined with all fields from schema",
+        "AC-2: TimeEntry has duration property that calculates elapsed time",
+        "GATE: Models importable and instantiable"
+      ],
+      "references": []
+    },
+    {
+      "id": "TASK-004",
+      "title": "Repository layer",
+      "description": "Create repository.py with CRUD operations: create/find tasks by name, create/find tags, link tags to tasks, create/close time entries, query active entry, query entries by date range and tags.",
+      "status": "pending",
+      "layer": 1,
+      "complexity": "Medium",
+      "depends_on": ["TASK-002", "TASK-003"],
+      "files": ["src/tracker/repository.py"],
+      "acceptance_criteria": [
+        "AC-1: Can create and find tasks by name (reuse existing)",
+        "AC-2: Can create tags and link/unlink to tasks (many-to-many)",
+        "AC-3: Can create time entries and close active entry (set end_time)",
+        "AC-4: Can query entries filtered by date range and/or tags",
+        "AC-5: INV-4 enforced: only one open time entry at a time",
+        "GATE: All repository methods work against in-memory SQLite"
+      ],
+      "references": ["US-1", "US-2", "US-3", "US-4", "US-5"]
+    },
+    {
+      "id": "TASK-005",
+      "title": "Service layer with business logic",
+      "description": "Create service.py implementing: start_task (auto-pause active), stop_task, resume_task, add_tags, get_report (daily + filtered), list_tasks. Enforces BR-1 through BR-4.",
+      "status": "pending",
+      "layer": 1,
+      "complexity": "Medium",
+      "depends_on": ["TASK-004"],
+      "files": ["src/tracker/service.py"],
+      "acceptance_criteria": [
+        "AC-1: start_task auto-pauses any active task before starting new one (BR-1)",
+        "AC-2: resume_task creates new time entry for existing task (BR-3)",
+        "AC-3: get_report aggregates time from all entries per task (BR-2)",
+        "AC-4: list_tasks returns tasks with status and accumulated time",
+        "GATE: Service methods work correctly via unit tests"
+      ],
+      "references": ["US-1", "US-2", "US-3", "US-4", "US-5", "US-6"]
+    },
+    {
+      "id": "TASK-006",
+      "title": "CLI commands with Click",
+      "description": "Create cli.py with Click group and subcommands: start, stop, resume, list, report, tag. Wire commands to service layer. Handle user input validation and error display.",
+      "status": "pending",
+      "layer": 1,
+      "complexity": "Medium",
+      "depends_on": ["TASK-005"],
+      "files": ["src/tracker/cli.py"],
+      "acceptance_criteria": [
+        "AC-1: 'tracker start \"name\" --tag X' starts task with tags",
+        "AC-2: 'tracker stop' pauses active task",
+        "AC-3: 'tracker resume' shows paused tasks for selection",
+        "AC-4: 'tracker list' shows all tasks with status",
+        "AC-5: 'tracker report' with --from, --to, --tag filters",
+        "AC-6: 'tracker tag TASK_ID --add TAG' adds tag to existing task",
+        "GATE: tracker --help shows all commands"
+      ],
+      "references": ["US-1", "US-2", "US-3", "US-4", "US-5", "US-6"]
+    },
+    {
+      "id": "TASK-007",
+      "title": "Report formatting with tabulate",
+      "description": "Create formatting.py with functions to format report data as aligned terminal tables. Show task name, tags, total time (HH:MM:SS), percentage. Grand total row at bottom.",
+      "status": "pending",
+      "layer": 1,
+      "complexity": "Low",
+      "depends_on": ["TASK-005"],
+      "files": ["src/tracker/formatting.py"],
+      "acceptance_criteria": [
+        "AC-1: Report table shows columns: Task, Tags, Time, Percentage",
+        "AC-2: Time displayed as HH:MM:SS format",
+        "AC-3: Tasks sorted by total time descending",
+        "AC-4: Grand total row at bottom",
+        "GATE: Formatted output is readable in terminal"
+      ],
+      "references": ["US-4", "US-5"]
+    },
+    {
+      "id": "TASK-008",
+      "title": "Unit tests for service and repository",
+      "description": "Create test_service.py and test_repository.py with pytest. Use in-memory SQLite via conftest.py fixtures. Cover: start/stop/resume flows, tag operations, report queries, edge cases (duplicate tasks, no active task).",
+      "status": "pending",
+      "layer": 1,
+      "complexity": "Medium",
+      "depends_on": ["TASK-005", "TASK-007"],
+      "files": ["tests/conftest.py", "tests/test_service.py", "tests/test_repository.py"],
+      "acceptance_criteria": [
+        "AC-1: conftest.py provides in-memory SQLite fixture",
+        "AC-2: Service tests cover start, stop, resume, report, list flows",
+        "AC-3: Repository tests cover CRUD and query operations",
+        "AC-4: Edge cases: stop with no active task, resume with no paused tasks",
+        "GATE: pytest passes with 80%+ coverage on service and repository"
+      ],
+      "references": ["E2E-1", "E2E-2"]
+    },
+    {
+      "id": "TASK-009",
+      "title": "Integration tests for CLI commands",
+      "description": "Create test_cli.py using Click's CliRunner. Test full command flows: start → switch → resume → report. Verify output formatting and error messages.",
+      "status": "pending",
+      "layer": 1,
+      "complexity": "Medium",
+      "depends_on": ["TASK-006", "TASK-008"],
+      "files": ["tests/test_cli.py"],
+      "acceptance_criteria": [
+        "AC-1: Full lifecycle test: start → start another → resume → stop → report",
+        "AC-2: Tag operations tested via CLI",
+        "AC-3: Error cases: invalid commands, missing arguments",
+        "AC-4: Report filters tested: --from, --to, --tag",
+        "GATE: pytest passes all CLI integration tests"
+      ],
+      "references": ["E2E-1", "E2E-2"]
+    },
+    {
+      "id": "TASK-010",
+      "title": "Code review",
+      "description": "Run code review using meli-code-reviewer. Check code quality, naming conventions, error handling, and adherence to specs.",
+      "status": "pending",
+      "layer": 3,
+      "complexity": "Low",
+      "depends_on": ["TASK-009"],
+      "files": [],
+      "acceptance_criteria": [
+        "AC-1: No critical issues found by meli-code-reviewer",
+        "GATE: Code review passes"
+      ],
+      "references": []
+    },
+    {
+      "id": "TASK-011",
+      "title": "Performance review",
+      "description": "Run performance review using meli-performance-expert. Check for N+1 queries, inefficient algorithms, and SQLite query optimization.",
+      "status": "pending",
+      "layer": 3,
+      "complexity": "Low",
+      "depends_on": ["TASK-009"],
+      "files": [],
+      "acceptance_criteria": [
+        "AC-1: No N+1 query patterns detected",
+        "AC-2: SQLite indexes verified for report queries",
+        "GATE: Performance review passes"
+      ],
+      "references": []
+    },
+    {
+      "id": "TASK-012",
+      "title": "Security review",
+      "description": "Run security review using meli-security-expert. Check for SQL injection, file permission issues, and input validation.",
+      "status": "pending",
+      "layer": 3,
+      "complexity": "Low",
+      "depends_on": ["TASK-009"],
+      "files": [],
+      "acceptance_criteria": [
+        "AC-1: No SQL injection vulnerabilities (parameterized queries used)",
+        "AC-2: Database file created with restrictive permissions",
+        "GATE: Security review passes"
+      ],
+      "references": []
+    }
+  ],
+  "dependency_graph": {
+    "by_layer": {
+      "1": {
+        "level_0": ["TASK-001"],
+        "level_1": ["TASK-002", "TASK-003"],
+        "level_2": ["TASK-004"],
+        "level_3": ["TASK-005"],
+        "level_4": ["TASK-006", "TASK-007"],
+        "level_5": ["TASK-008"],
+        "level_6": ["TASK-009"]
+      },
+      "3": {
+        "level_0": ["TASK-010", "TASK-011", "TASK-012"]
+      }
+    }
+  }
+}
